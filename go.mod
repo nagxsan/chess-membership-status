@@ -1,4 +1,4 @@
-module github.com/daredevil0905/chess-membership
+module github.com/daredevil0905/chess-membership-status
 
 go 1.21.0
 
