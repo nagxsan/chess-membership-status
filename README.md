@@ -14,23 +14,33 @@ Since I have solved for this specific use case, there are a few pointers that yo
 ## How to use
 ### Step 1: Clone the repository
 You will need to clone the repository to your local device:  
-`git clone https://github.com/daredevil0905/chess-membership-status.git`
+```
+git clone https://github.com/daredevil0905/chess-membership-status.git
+```
 
 ### Step 2: Install go and its dependencies
 You will need to install `go` and its dependencies on your local machine to run the code. You can download go from the official website https://go.dev/dl/
 
 ### Step 3: Navigate to the Project Directory
 Navigate to the cloned project directory in your device.  
-`cd chess-membership-status`
+```
+cd chess-membership-status
+```
 
 ### Step 4: Install the project dependencies
 Run the following command to install project dependencies in your terminal. This will install the dependencies listed in the `go.mod` file.  
-`go mod download`
+```
+go mod download
+```
 
 ### Step 5: Build the application
 Now you need to build the application. For doing this execute the following code in the terminal. This will build the code in `main.go` and generate an executable file that you can directly run on your device.  
-`go build`
+```
+go build
+```
 
 ### Step 6: Run the application
 Run the executable file by double-clicking it or in the terminal with the following command (you may need to specify relative path by using './' before executable file's name, choose whatever works for you):  
-`chess-membership-status.exe`
+```
+chess-membership-status.exe
+```
