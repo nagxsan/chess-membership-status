@@ -1,6 +1,7 @@
 package main
 
 import (
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -74,10 +75,25 @@ func getMCAMembershipStatus(id string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("Error in making an API call: %v", err)
 	}
-
 	defer response.Body.Close()
 
-	body, err := io.ReadAll(response.Body)
+	if response.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("Unexpected status code; API call failed")
+	}
+
+	var reader io.ReadCloser
+	switch response.Header.Get("Content-Encoding") {
+		case "gzip":
+			reader, err = gzip.NewReader(response.Body)
+			if err != nil {
+				return false, fmt.Errorf("Error in unzipping response body: %v", err)
+			}
+			defer reader.Close()
+		default:
+			reader = response.Body
+	}
+
+	body, err := io.ReadAll(reader)
 	if err != nil {
 		return false, fmt.Errorf("Error in reading response body: %v", err)
 	}
