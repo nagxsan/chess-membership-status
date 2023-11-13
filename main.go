@@ -53,6 +53,10 @@ func getMembership(id string) (bool, error) {
 }
 
 func getMCAId(id string) (string, error) {
+	if id == "" {
+		return "", fmt.Errorf("Error: blank AICF ID")
+	}
+	
 	headers := map[string]string{
 		"Cache-Control":   "no-cache",
 		"User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36",
