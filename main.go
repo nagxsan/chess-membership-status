@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -51,7 +52,7 @@ func getMembership(id string) (bool, error) {
 	return membershipStatus, nil
 }
 
-func getMCAMembershipStatus(id string) (bool, error) {
+func getMCAId(id string) (string, error) {
 	headers := map[string]string{
 		"Cache-Control":   "no-cache",
 		"User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36",
@@ -64,7 +65,7 @@ func getMCAMembershipStatus(id string) (bool, error) {
 	client := &http.Client{}
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return false, fmt.Errorf("Error in creating new request: %v", err)
+		return "", fmt.Errorf("Error in creating new request: %v", err)
 	}
 
 	for key, value := range headers {
@@ -73,12 +74,12 @@ func getMCAMembershipStatus(id string) (bool, error) {
 
 	response, err := client.Do(req)
 	if err != nil {
-		return false, fmt.Errorf("Error in making an API call: %v", err)
+		return "", fmt.Errorf("Error in making an API call: %v", err)
 	}
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK {
-		return false, fmt.Errorf("Unexpected status code; API call failed")
+		return "", fmt.Errorf("Unexpected status code; API call failed")
 	}
 
 	var reader io.ReadCloser
@@ -86,7 +87,7 @@ func getMCAMembershipStatus(id string) (bool, error) {
 		case "gzip":
 			reader, err = gzip.NewReader(response.Body)
 			if err != nil {
-				return false, fmt.Errorf("Error in unzipping response body: %v", err)
+				return "", fmt.Errorf("Error in unzipping response body: %v", err)
 			}
 			defer reader.Close()
 		default:
@@ -95,24 +96,22 @@ func getMCAMembershipStatus(id string) (bool, error) {
 
 	body, err := io.ReadAll(reader)
 	if err != nil {
-		return false, fmt.Errorf("Error in reading response body: %v", err)
+		return "", fmt.Errorf("Error in reading response body: %v", err)
 	}
 
 	responseHTML := string(body)
-	findPos := strings.Index(responseHTML, "</label>")
-	if findPos == -1 {
-		return false, nil
-	}
+	re := regexp.MustCompile(`PO.*<a>`)
+	matches := re.FindAllString(responseHTML, -1)
 
-	getResponseNum, err := strconv.Atoi(responseHTML[findPos-1:findPos])
-	if err != nil {
-		return false, fmt.Errorf("Error in getting the MCA status response: %v", err)
-	}
-
-	if getResponseNum == 1 {
-		return true, nil
+	if len(matches) > 0 {
+		var mcaIds string
+		for i, mcaId := range matches {
+			matches[i] = mcaId[0:len(mcaId) - 3]
+		}
+		mcaIds = strings.Join(matches, ", ")
+		return mcaIds, nil
 	} else {
-		return false, nil
+		return "", fmt.Errorf("Error: no MCA IDs returned for the given AICF ID: %v", err)
 	}
 }
 
@@ -125,27 +124,27 @@ func main() {
 	_, err := fmt.Scan(&excelPath)
 	if err != nil {
 		fmt.Println("Error in excel file name: ", err)
-		os.Exit(1)
+		return
 	}
 
 	fmt.Print("Enter sheet name: ")
 	_, err = fmt.Scan(&sheetName)
 	if err != nil {
 		fmt.Println("Error in sheet name: ", err)
-		os.Exit(1)
+		return
 	}
 
 	fmt.Print("Enter row number where table starts: ")
 	_, err = fmt.Scan(&tableRowNumber)
 	if err != nil {
 		fmt.Println("Error in table row number: ", err)
-		os.Exit(1)
+		return
 	}
 
 	xl, err := excelize.OpenFile(excelPath)
 	if err != nil {
 		fmt.Println("Error opening file: ", err)
-		os.Exit(1)
+		return
 	}
 
 	defer xl.Close()
@@ -153,52 +152,50 @@ func main() {
 	sheetDimension, err := xl.GetSheetDimension(sheetName)
 	if err != nil {
 		fmt.Println("Error getting sheet dimension: ", err)
-		os.Exit(1)
+		return
 	}
 
 	lastCol := strings.Split(sheetDimension, ":")[1][0]
 
 	membershipStatusCell := string(lastCol+1) + strconv.Itoa(tableRowNumber)
-	membershipStatusMCACell := string(lastCol+2) + strconv.Itoa(tableRowNumber)
+	mcaIdCell := string(lastCol+2) + strconv.Itoa(tableRowNumber)
 
 	err = xl.SetCellStr(sheetName, membershipStatusCell, "Membership_Status")
 	if err != nil {
 		fmt.Println("Error setting the Membership_Status column: ", err)
-		os.Exit(1)
+		return
 	}
 
-	err = xl.SetCellStr(sheetName, membershipStatusMCACell, "Membership_Status_MCA")
+	err = xl.SetCellStr(sheetName, mcaIdCell, "MCA ID")
 	if err != nil {
-		fmt.Println("Error setting the Membership_Status_MCA column: ", err)
-		os.Exit(1)
+		fmt.Println("Error setting the MCA ID column: ", err)
+		return
 	}
 
 	err = xl.Save()
 	if err != nil {
 		fmt.Println("Error saving excel file: ", err)
-		os.Exit(1)
+		return
 	}
 
 	membershipStatusColumn := string(lastCol + 1)
-	membershipStatusMCAColumn := string(lastCol + 2)
+	mcaIdColumn := string(lastCol + 2)
 
-	var aicfColumn, fideColumn, mcaColumn string
+	var aicfColumn, fideColumn string
 
 	for colNum := byte(0); (colNum + 65) <= lastCol; colNum++ {
 		colName := string(colNum + 65)
 		cellNum := colName + strconv.Itoa(tableRowNumber)
 		cellValue, err := xl.GetCellValue(sheetName, cellNum)
 		if err != nil {
-			fmt.Println("Error reading coliumn cell value: ", err)
-			os.Exit(1)
+			fmt.Println("Error reading column cell value: ", err)
+			return
 		}
 
 		if cellValue == "AICF ID" {
 			aicfColumn = colName
 		} else if cellValue == "FIDE ID" {
 			fideColumn = colName
-		} else if cellValue == "MCA ID" {
-			mcaColumn = colName
 		}
 	}
 
@@ -206,7 +203,7 @@ func main() {
 		firstCellValue, err := xl.GetCellValue(sheetName, "A" + strconv.Itoa(dataRowNumber))
 		if err != nil {
 			fmt.Println("Error fetching first cell value to verify the table end: ", err)
-			os.Exit(1)
+			return
 		}
 
 		if firstCellValue == "" {
@@ -217,10 +214,31 @@ func main() {
 			colName := string(colNum + 65)
 			if colName == aicfColumn || colName == fideColumn {
 
+				if colName == aicfColumn {
+
+					id, err := xl.GetCellValue(sheetName, colName + strconv.Itoa(dataRowNumber))
+					if err != nil {
+						fmt.Println("Error getting cell value: ", err)
+						return
+					}
+
+					mcaId, err := getMCAId(id)
+					if err != nil {
+						fmt.Printf("ID: %v; Error getting MCA ID: %v\n", id, err)
+					} else {
+						err = xl.SetCellStr(sheetName, mcaIdColumn + strconv.Itoa(dataRowNumber), mcaId)
+						if err != nil {
+							fmt.Println("Error setting MCA ID in sheet")
+							return
+						}
+					}
+
+				}
+
 				membershipStatusCellValue, err := xl.GetCellValue(sheetName, membershipStatusColumn + strconv.Itoa(dataRowNumber))
 				if err != nil {
 					fmt.Println("Error getting membership status cell value: ", err)
-					os.Exit(1)
+					return
 				}
 
 				if membershipStatusCellValue == "Yes" {
@@ -230,7 +248,7 @@ func main() {
 				id, err := xl.GetCellValue(sheetName, colName + strconv.Itoa(dataRowNumber))
 				if err != nil {
 					fmt.Println("Error getting cell value: ", err)
-					os.Exit(1)
+					return
 				}
 
 				membershipStatus, err := getMembership(id)
@@ -244,49 +262,13 @@ func main() {
 					err = xl.SetCellStr(sheetName, membershipStatusColumn + strconv.Itoa(dataRowNumber), "Check Manually")
 					if err != nil {
 						fmt.Println("Error setting membership status value: ", err)
-						os.Exit(1)
+						return
 					}
 				} else {
 					err = xl.SetCellStr(sheetName, membershipStatusColumn + strconv.Itoa(dataRowNumber), "Yes")
 					if err != nil {
 						fmt.Println("Error setting membership status value: ", err)
-						os.Exit(1)
-					}
-				}
-			} else if colName == mcaColumn {
-				id, err := xl.GetCellValue(sheetName, colName + strconv.Itoa(dataRowNumber))
-				if err != nil {
-					fmt.Println("Error getting cell value: ", err)
-					os.Exit(1)
-				}
-
-				if strings.HasPrefix(id, "PO") == false {
-					err = xl.SetCellStr(sheetName, membershipStatusMCAColumn + strconv.Itoa(dataRowNumber), "Check Manually")
-					if err != nil {
-						fmt.Println("Error setting membership status MCA value: ", err)
-						os.Exit(1)
-					}
-					continue
-				}
-
-				membershipStatusMCA, err := getMCAMembershipStatus(id)
-				if err != nil {
-					fmt.Printf("ID: %v ; Error in getting MCA membership status response: %v\n", id, err)
-				}
-
-				time.Sleep(2 * time.Second)
-
-				if membershipStatusMCA == false || err != nil {
-					err = xl.SetCellStr(sheetName, membershipStatusMCAColumn + strconv.Itoa(dataRowNumber), "Check Manually")
-					if err != nil {
-						fmt.Println("Error setting membership status MCA value: ", err)
-						os.Exit(1)
-					}
-				} else {
-					err = xl.SetCellStr(sheetName, membershipStatusMCAColumn + strconv.Itoa(dataRowNumber), "Yes")
-					if err != nil {
-						fmt.Println("Error setting membership status MCA value: ", err)
-						os.Exit(1)
+						return
 					}
 				}
 			}
@@ -296,7 +278,7 @@ func main() {
 	err = xl.Save()
 	if err != nil {
 		fmt.Println("Error saving excel file: ", err)
-		os.Exit(1)
+		return
 	}
 	
 	endTime := time.Now()
