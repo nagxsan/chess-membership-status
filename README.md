@@ -1,11 +1,11 @@
 # Chess Membership Status
-I am an avid chess player and my father (IA Sandesh Nagarnaik) has been a Chief Arbiter in many chess tournaments. I have always seen him spending a lot of time verifying the players participating in the tournament. The general process is always to look up the player's AICF/FIDE ID on the website and check the "Membership Status" of the player whether it is "Active/Not Active". I have done the same thing for the MCA (Maharashtra) membership as well I figured that if I could automate this process by making an API call to the website and parsing the response generated, then it may save him the time of verifying the players manually.
+I am an avid chess player and my father (IA Sandesh Nagarnaik) has been a Chief Arbiter in many chess tournaments. I have always seen him spending a lot of time verifying the players participating in the tournament. The general process is always to look up the player's AICF/FIDE ID on the website and check the "Membership Status" of the player whether it is "Active/Not Active". Another thing that I have done is that I have used the AICF ID of every player to get their MCA IDs (if existing). I figured that if I could automate this process by making an API call to the website and parsing the response generated, then it may save him the time of verifying the players manually.
 
 ## Pre-requisites (IMPORTANT)
 Since I have solved for this specific use case, there are a few pointers that you need to follow if this application needs to be executed error free.  
 1. The players' information and everything must be in a **'.xlsx'** file only (try having no spaces in the file-name).
 2. The columns containing the FIDE ID's or the AICF ID's must be named **FIDE ID** or **AICF ID** respectively.
-3. The column containing the MCA ID must be named **MCA ID**
+3. The column containing the MCA ID must be named **MCA ID** (OPTIONAL)
 4. Ensure that there is at least one completely empty row after the player's details table in the excel file.
 5. This is not compulsory but it may avoid unpredictable errors (if any). Keep the excel file which you need to evaluate and the executable application generated in the same folder.
 6. Make sure that the number of columns in the table are less than 26 that is from (A-Y) at max. If that's not the case, you can just create a different excel file with only the ID's which adhere to these instructions and execute the application.
