@@ -119,6 +119,43 @@ func getMCAId(id string) (string, error) {
 	}
 }
 
+func getAICFId(id string) (string, error) {
+	url := fmt.Sprintf("https://admin.aicf.in/api/players?name=%s&state=0&city=0", id)
+
+	response, err := http.Get(url)
+	if err != nil {
+		return "", fmt.Errorf("Error in making the API call: %v", err)
+	}
+
+	defer response.Body.Close()
+
+	var data map[string]interface{}
+	if err := json.NewDecoder(response.Body).Decode(&data); err != nil {
+		return "", fmt.Errorf("Error in decoding response body: %v", err)
+	}
+
+	dataArray, ok := data["data"].([]interface{})
+	if !ok || len(dataArray) <= 0 {
+		return "", fmt.Errorf("Error in getting dataArray: %v", err)
+	}
+
+	if len(dataArray) != 1 {
+		return "", fmt.Errorf("Incorrect ID")
+	}
+
+	playerData, ok := dataArray[0].(map[string]interface{})
+	if !ok {
+		return "", fmt.Errorf("Error in getting playerData: %v", err)
+	}
+
+	aicfId, ok := playerData["aicf_id"].(string)
+	if !ok {
+		return "", fmt.Errorf("Error in getting AICF ID: %v", err)
+	}
+
+	return aicfId, nil
+}
+
 func main() {
 	startTime := time.Now()
 
@@ -214,69 +251,81 @@ func main() {
 			break
 		}
 
-		for colNum := byte(0); (colNum + 65) <= lastCol; colNum++ {
-			colName := string(colNum + 65)
-			if colName == aicfColumn || colName == fideColumn {
+		aicfId, err := xl.GetCellValue(sheetName, aicfColumn + strconv.Itoa(dataRowNumber))
+		if err != nil {
+			fmt.Println("Error getting cell value: ", err)
+			return
+		}
 
-				if colName == aicfColumn {
+		fideId, err := xl.GetCellValue(sheetName, fideColumn + strconv.Itoa(dataRowNumber))
+		if err != nil {
+			fmt.Println("Error getting cell value: ", err)
+			return
+		}
 
-					id, err := xl.GetCellValue(sheetName, colName + strconv.Itoa(dataRowNumber))
-					if err != nil {
-						fmt.Println("Error getting cell value: ", err)
-						return
-					}
+		var membershipStatus bool
 
-					mcaId, err := getMCAId(id)
-					if err != nil {
-						fmt.Printf("ID: %v; Error getting MCA ID: %v\n", id, err)
-					} else {
-						err = xl.SetCellStr(sheetName, mcaIdColumn + strconv.Itoa(dataRowNumber), mcaId)
-						if err != nil {
-							fmt.Println("Error setting MCA ID in sheet")
-							return
-						}
-					}
+		if aicfId == "" && fideId == "" {
+			membershipStatus = false
+			err = xl.SetCellStr(sheetName, membershipStatusColumn + strconv.Itoa(dataRowNumber), "Check Manually")
+			if err != nil {
+				fmt.Println("Error setting membership status value: ", err)
+				return
+			}
+			continue
+		}
 
-				}
+		if aicfId == "" {
+			aicfId, err = getAICFId(fideId)
+			if err != nil {
+				fmt.Printf("Error setting AICF ID from FIDE ID: %v\n", fideId)
+			}
 
-				membershipStatusCellValue, err := xl.GetCellValue(sheetName, membershipStatusColumn + strconv.Itoa(dataRowNumber))
-				if err != nil {
-					fmt.Println("Error getting membership status cell value: ", err)
-					return
-				}
-
-				if membershipStatusCellValue == "Yes" {
-					continue
-				}
-
-				id, err := xl.GetCellValue(sheetName, colName + strconv.Itoa(dataRowNumber))
-				if err != nil {
-					fmt.Println("Error getting cell value: ", err)
-					return
-				}
-
-				membershipStatus, err := getMembership(id)
-				if err != nil {
-					fmt.Printf("ID: %v; Error in getting membership status response: %v\n", id, err)
-				}
-
-				time.Sleep(2 * time.Second)
-
-				if membershipStatus == false || err != nil {
-					err = xl.SetCellStr(sheetName, membershipStatusColumn + strconv.Itoa(dataRowNumber), "Check Manually")
-					if err != nil {
-						fmt.Println("Error setting membership status value: ", err)
-						return
-					}
-				} else {
-					err = xl.SetCellStr(sheetName, membershipStatusColumn + strconv.Itoa(dataRowNumber), "Yes")
-					if err != nil {
-						fmt.Println("Error setting membership status value: ", err)
-						return
-					}
-				}
+			err = xl.SetCellStr(sheetName, aicfColumn + strconv.Itoa(dataRowNumber), aicfId)
+			if err != nil {
+				fmt.Println("Error setting AICF ID value: ", err)
+				return
 			}
 		}
+
+		mcaId, err := getMCAId(aicfId)
+		if err != nil {
+			fmt.Printf("ID: %v; Error getting MCA ID for AICF ID: %v\n", aicfId, err)
+		} else {
+			err = xl.SetCellStr(sheetName, mcaIdColumn + strconv.Itoa(dataRowNumber), mcaId)
+			if err != nil {
+				fmt.Println("Error setting MCA ID in sheet")
+				return
+			}
+		}
+
+		membershipStatusFIDE, err := getMembership(fideId)
+		if err != nil {
+			fmt.Printf("ID: %v; Error in getting membership status response FIDE ID: %v\n", fideId, err)
+		}
+
+		membershipStatusAICF, err := getMembership(aicfId)
+		if err != nil {
+			fmt.Printf("ID: %v; Error in getting membership status response AICF ID: %v\n", aicfId, err)
+		}
+
+		membershipStatus = membershipStatusFIDE || membershipStatusAICF
+
+		if membershipStatus == false {
+			err = xl.SetCellStr(sheetName, membershipStatusColumn + strconv.Itoa(dataRowNumber), "Check Manually")
+			if err != nil {
+				fmt.Println("Error setting membership status value: ", err)
+				return
+			}
+		} else {
+			err = xl.SetCellStr(sheetName, membershipStatusColumn + strconv.Itoa(dataRowNumber), "Yes")
+			if err != nil {
+				fmt.Println("Error setting membership status value: ", err)
+				return
+			}
+		}
+
+		time.Sleep(2 * time.Second)
 	}
 
 	err = xl.Save()
