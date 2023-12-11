@@ -318,7 +318,7 @@ func main() {
 				return
 			}
 		} else {
-			err = xl.SetCellStr(sheetName, membershipStatusColumn + strconv.Itoa(dataRowNumber), "Yes")
+			err = xl.SetCellStr(sheetName, membershipStatusColumn + strconv.Itoa(dataRowNumber), "Active")
 			if err != nil {
 				fmt.Println("Error setting membership status value: ", err)
 				return
