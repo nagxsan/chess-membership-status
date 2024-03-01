@@ -53,10 +53,10 @@ func getMembership(id string) (bool, error) {
 }
 
 func getMCAId(id string) (string, error) {
-	if id == "" {
-		return "", fmt.Errorf("Error: blank AICF ID")
+	if len(id) < 8 || !strings.Contains(strings.ToLower(id), "mh") {
+		return "", fmt.Errorf("error: incorrect AICF ID")
 	}
-	
+
 	headers := map[string]string{
 		"Cache-Control":   "no-cache",
 		"User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36",
@@ -69,7 +69,7 @@ func getMCAId(id string) (string, error) {
 	client := &http.Client{}
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return "", fmt.Errorf("Error in creating new request: %v", err)
+		return "", fmt.Errorf("error in creating new request: %v", err)
 	}
 
 	for key, value := range headers {
@@ -78,29 +78,29 @@ func getMCAId(id string) (string, error) {
 
 	response, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("Error in making an API call: %v", err)
+		return "", fmt.Errorf("error in making an API call: %v", err)
 	}
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("Unexpected status code; API call failed")
+		return "", fmt.Errorf("unexpected status code; API call failed")
 	}
 
 	var reader io.ReadCloser
 	switch response.Header.Get("Content-Encoding") {
-		case "gzip":
-			reader, err = gzip.NewReader(response.Body)
-			if err != nil {
-				return "", fmt.Errorf("Error in unzipping response body: %v", err)
-			}
-			defer reader.Close()
-		default:
-			reader = response.Body
+	case "gzip":
+		reader, err = gzip.NewReader(response.Body)
+		if err != nil {
+			return "", fmt.Errorf("error in unzipping response body: %v", err)
+		}
+		defer reader.Close()
+	default:
+		reader = response.Body
 	}
 
 	body, err := io.ReadAll(reader)
 	if err != nil {
-		return "", fmt.Errorf("Error in reading response body: %v", err)
+		return "", fmt.Errorf("error in reading response body: %v", err)
 	}
 
 	responseHTML := string(body)
@@ -110,12 +110,12 @@ func getMCAId(id string) (string, error) {
 	if len(matches) > 0 {
 		var mcaIds string
 		for i, mcaId := range matches {
-			matches[i] = mcaId[0:len(mcaId) - 3]
+			matches[i] = mcaId[0 : len(mcaId)-3]
 		}
 		mcaIds = strings.Join(matches, ", ")
 		return mcaIds, nil
 	} else {
-		return "", fmt.Errorf("Error: no MCA IDs returned for the given AICF ID: %v", err)
+		return "", fmt.Errorf("error: no MCA IDs returned for the given AICF ID: %v", err)
 	}
 }
 
@@ -124,33 +124,33 @@ func getAICFId(id string) (string, error) {
 
 	response, err := http.Get(url)
 	if err != nil {
-		return "", fmt.Errorf("Error in making the API call: %v", err)
+		return "", fmt.Errorf("error in making the API call: %v", err)
 	}
 
 	defer response.Body.Close()
 
 	var data map[string]interface{}
 	if err := json.NewDecoder(response.Body).Decode(&data); err != nil {
-		return "", fmt.Errorf("Error in decoding response body: %v", err)
+		return "", fmt.Errorf("error in decoding response body: %v", err)
 	}
 
 	dataArray, ok := data["data"].([]interface{})
 	if !ok || len(dataArray) <= 0 {
-		return "", fmt.Errorf("Error in getting dataArray: %v", err)
+		return "", fmt.Errorf("error in getting dataArray: %v", err)
 	}
 
 	if len(dataArray) != 1 {
-		return "", fmt.Errorf("Incorrect ID")
+		return "", fmt.Errorf("incorrect ID")
 	}
 
 	playerData, ok := dataArray[0].(map[string]interface{})
 	if !ok {
-		return "", fmt.Errorf("Error in getting playerData: %v", err)
+		return "", fmt.Errorf("error in getting playerData: %v", err)
 	}
 
 	aicfId, ok := playerData["aicf_id"].(string)
 	if !ok {
-		return "", fmt.Errorf("Error in getting AICF ID: %v", err)
+		return "", fmt.Errorf("error in getting AICF ID: %v", err)
 	}
 
 	return aicfId, nil
@@ -241,7 +241,7 @@ func main() {
 	}
 
 	for dataRowNumber := tableRowNumber + 1; ; dataRowNumber++ {
-		firstCellValue, err := xl.GetCellValue(sheetName, "A" + strconv.Itoa(dataRowNumber))
+		firstCellValue, err := xl.GetCellValue(sheetName, "A"+strconv.Itoa(dataRowNumber))
 		if err != nil {
 			fmt.Println("Error fetching first cell value to verify the table end: ", err)
 			return
@@ -251,13 +251,13 @@ func main() {
 			break
 		}
 
-		aicfId, err := xl.GetCellValue(sheetName, aicfColumn + strconv.Itoa(dataRowNumber))
+		aicfId, err := xl.GetCellValue(sheetName, aicfColumn+strconv.Itoa(dataRowNumber))
 		if err != nil {
 			fmt.Println("Error getting cell value: ", err)
 			return
 		}
 
-		fideId, err := xl.GetCellValue(sheetName, fideColumn + strconv.Itoa(dataRowNumber))
+		fideId, err := xl.GetCellValue(sheetName, fideColumn+strconv.Itoa(dataRowNumber))
 		if err != nil {
 			fmt.Println("Error getting cell value: ", err)
 			return
@@ -267,7 +267,7 @@ func main() {
 
 		if aicfId == "" && fideId == "" {
 			membershipStatus = false
-			err = xl.SetCellStr(sheetName, membershipStatusColumn + strconv.Itoa(dataRowNumber), "Check Manually")
+			err = xl.SetCellStr(sheetName, membershipStatusColumn+strconv.Itoa(dataRowNumber), "Check Manually")
 			if err != nil {
 				fmt.Println("Error setting membership status value: ", err)
 				return
@@ -281,7 +281,7 @@ func main() {
 				fmt.Printf("Error setting AICF ID from FIDE ID: %v\n", fideId)
 			}
 
-			err = xl.SetCellStr(sheetName, aicfColumn + strconv.Itoa(dataRowNumber), aicfId)
+			err = xl.SetCellStr(sheetName, aicfColumn+strconv.Itoa(dataRowNumber), aicfId)
 			if err != nil {
 				fmt.Println("Error setting AICF ID value: ", err)
 				return
@@ -292,7 +292,7 @@ func main() {
 		if err != nil {
 			fmt.Printf("ID: %v; Error getting MCA ID for AICF ID: %v\n", aicfId, err)
 		} else {
-			err = xl.SetCellStr(sheetName, mcaIdColumn + strconv.Itoa(dataRowNumber), mcaId)
+			err = xl.SetCellStr(sheetName, mcaIdColumn+strconv.Itoa(dataRowNumber), mcaId)
 			if err != nil {
 				fmt.Println("Error setting MCA ID in sheet")
 				return
@@ -311,14 +311,14 @@ func main() {
 
 		membershipStatus = membershipStatusFIDE || membershipStatusAICF
 
-		if membershipStatus == false {
-			err = xl.SetCellStr(sheetName, membershipStatusColumn + strconv.Itoa(dataRowNumber), "Check Manually")
+		if !membershipStatus {
+			err = xl.SetCellStr(sheetName, membershipStatusColumn+strconv.Itoa(dataRowNumber), "Check Manually")
 			if err != nil {
 				fmt.Println("Error setting membership status value: ", err)
 				return
 			}
 		} else {
-			err = xl.SetCellStr(sheetName, membershipStatusColumn + strconv.Itoa(dataRowNumber), "Active")
+			err = xl.SetCellStr(sheetName, membershipStatusColumn+strconv.Itoa(dataRowNumber), "Active")
 			if err != nil {
 				fmt.Println("Error setting membership status value: ", err)
 				return
@@ -333,7 +333,7 @@ func main() {
 		fmt.Println("Error saving excel file: ", err)
 		return
 	}
-	
+
 	endTime := time.Now()
 
 	fmt.Println("Time taken: ", endTime.Sub(startTime))
