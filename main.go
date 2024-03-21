@@ -159,6 +159,8 @@ func getAICFId(id string) (string, error) {
 func main() {
 	startTime := time.Now()
 
+	fmt.Println("Created and Developed by Sanchet Nagarnaik")
+
 	var excelPath, sheetName string
 	var tableRowNumber int
 	fmt.Print("Enter excel file path with extension (no spaces anywhere in the file path): ")
