@@ -104,19 +104,47 @@ func getMCAId(id string) (string, error) {
 	}
 
 	responseHTML := string(body)
-	re := regexp.MustCompile(`PO.*<a>`)
-	matches := re.FindAllString(responseHTML, -1)
+  
+  replaceSpacesRe := regexp.MustCompile(`\s+>`)
+  responseHTML = replaceSpacesRe.ReplaceAllString(responseHTML, ">")
 
-	if len(matches) > 0 {
-		var mcaIds string
-		for i, mcaId := range matches {
-			matches[i] = mcaId[0 : len(mcaId)-3]
-		}
-		mcaIds = strings.Join(matches, ", ")
-		return mcaIds, nil
-	} else {
-		return "", fmt.Errorf("error: no MCA IDs returned for the given AICF ID: %v", err)
-	}
+  var (
+    tableHeadings,
+    tableData [] string
+  )
+
+  var matches [][]string
+
+  tableHeadingsRe := regexp.MustCompile(`<th>(.*?)</th>`)
+  matches = tableHeadingsRe.FindAllStringSubmatch(responseHTML, -1)
+  for _, match := range matches {
+    tableHeadings = append(tableHeadings, match[1])
+  }
+
+  tableDataRe := regexp.MustCompile(`<td>(.*?)</td>`)
+  matches = tableDataRe.FindAllStringSubmatch(responseHTML, -1)
+  for _, match := range matches {
+    tableData = append(tableData, match[1])
+  }
+
+  fmt.Println(tableHeadings)
+  fmt.Println(tableData)
+
+  numCols := len(tableHeadings)
+  if tableHeadings[numCols - 1] == "Validity" {
+    if tableData[numCols - 1] != "" {
+      mcaIDRe := regexp.MustCompile(`(PO.*)<a>`)
+      matches = mcaIDRe.FindAllStringSubmatch(tableData[2], -1)
+      if len(matches) == 0 {
+        return "", fmt.Errorf("no MCA ID found")
+      }
+      return matches[0][1], nil
+    } else {
+      return "", fmt.Errorf("no validity")
+    }
+  } else {
+    return "", fmt.Errorf("Validity field does not exist")
+  }
 }
 
 func getAICFId(id string) (string, error) {
