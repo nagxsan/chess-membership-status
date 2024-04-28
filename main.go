@@ -15,7 +15,7 @@ import (
 	excelize "github.com/xuri/excelize/v2"
 )
 
-func getMembership(id string) (bool, error) {
+func getMembership(id, name string) (bool, error) {
 	url := fmt.Sprintf("https://admin.aicf.in/api/players?name=%s&state=0&city=0", id)
 
 	response, err := http.Get(url)
@@ -44,6 +44,19 @@ func getMembership(id string) (bool, error) {
 		return false, fmt.Errorf("Error in getting playerData: %v", err)
 	}
 
+  var firstName, lastName string
+  if playerData["first_name"] != nil {
+    firstName = playerData["first_name"].(string)
+  }
+
+  if playerData["last_name"] != nil {
+    lastName = playerData["last_name"].(string)
+  }
+
+  if strings.ToLower(firstName + " " + lastName) != strings.ToLower(name) {
+    return false, fmt.Errorf("Name does not exactly match")
+  }
+
 	membershipStatus, ok := playerData["membership_status"].(bool)
 	if !ok {
 		return false, fmt.Errorf("Error in getting membershipStatus: %v", err)
@@ -52,7 +65,7 @@ func getMembership(id string) (bool, error) {
 	return membershipStatus, nil
 }
 
-func getMCAId(id string) (string, error) {
+func getMCAId(id, name string) (string, error) {
 	if len(id) < 8 || !strings.Contains(strings.ToLower(id), "mh") {
 		return "", fmt.Errorf("error: incorrect AICF ID")
 	}
@@ -120,6 +133,8 @@ func getMCAId(id string) (string, error) {
   for _, match := range matches {
     tableHeadings = append(tableHeadings, match[1])
   }
+  
+  numCols := len(tableHeadings)
 
   tableDataRe := regexp.MustCompile(`<td>(.*?)</td>`)
   matches = tableDataRe.FindAllStringSubmatch(responseHTML, -1)
@@ -127,24 +142,41 @@ func getMCAId(id string) (string, error) {
     tableData = append(tableData, match[1])
   }
 
-  fmt.Println(tableHeadings)
-  fmt.Println(tableData)
-
-  numCols := len(tableHeadings)
-  if tableHeadings[numCols - 1] == "Validity" {
-    if tableData[numCols - 1] != "" {
-      mcaIDRe := regexp.MustCompile(`(PO.*)<a>`)
-      matches = mcaIDRe.FindAllStringSubmatch(tableData[2], -1)
-      if len(matches) == 0 {
-        return "", fmt.Errorf("no MCA ID found")
+  var mcaLicenses [][]string
+  var mcaLicense []string
+  for idx, data := range tableData {
+    if idx % numCols == 1 || idx % numCols == 2 || idx % numCols == numCols - 1 {
+      if idx % numCols == 1 {
+        nameRe := regexp.MustCompile(`<strong>(.*?)</strong>`)
+        matches = nameRe.FindAllStringSubmatch(data, -1)
+        match := strings.Split(matches[0][1], " ")
+        name := match[0] + " " + match[len(match) - 1]
+        data = name
       }
-      return matches[0][1], nil
-    } else {
-      return "", fmt.Errorf("no validity")
+      if idx % numCols == 2 {
+        data = data[:len(data) - 3]
+      }
+      mcaLicense = append(mcaLicense, data)
     }
-  } else {
-    return "", fmt.Errorf("Validity field does not exist")
+    if idx % numCols == numCols - 1 {
+      mcaLicenses = append(mcaLicenses, mcaLicense)
+      mcaLicense = []string{}
+    }
   }
+
+  if len(mcaLicenses) == 0 {
+    return "", fmt.Errorf("%s: No MCA player record found.", id)
+  }
+
+  for _, license := range mcaLicenses {
+    if license[2] == "" {
+      continue
+    }
+    if license[1] != "" && strings.Contains(strings.ToLower(license[0]), strings.ToLower(name)) {
+      return license[1], nil
+    }
+  }
+  return "", fmt.Errorf("%s: no MCA ID found", id)
 }
 
 func getAICFId(id string) (string, error) {
@@ -252,7 +284,7 @@ func main() {
 	membershipStatusColumn := string(lastCol + 1)
 	mcaIdColumn := string(lastCol + 2)
 
-	var aicfColumn, fideColumn string
+	var aicfColumn, fideColumn, nameColumn string
 
 	for colNum := byte(0); (colNum + 65) <= lastCol; colNum++ {
 		colName := string(colNum + 65)
@@ -267,7 +299,9 @@ func main() {
 			aicfColumn = colName
 		} else if cellValue == "FIDE ID" {
 			fideColumn = colName
-		}
+		} else if cellValue == "Name" {
+      nameColumn = colName
+    }
 	}
 
 	for dataRowNumber := tableRowNumber + 1; ; dataRowNumber++ {
@@ -292,6 +326,12 @@ func main() {
 			fmt.Println("Error getting cell value: ", err)
 			return
 		}
+
+    name, err := xl.GetCellValue(sheetName, nameColumn+strconv.Itoa(dataRowNumber))
+    if err != nil {
+      fmt.Println("Error getting cell value ", err)
+      return
+    }
 
 		var membershipStatus bool
 
@@ -318,7 +358,7 @@ func main() {
 			}
 		}
 
-		mcaId, err := getMCAId(aicfId)
+		mcaId, err := getMCAId(aicfId, name)
 		if err != nil {
 			fmt.Printf("ID: %v; Error getting MCA ID for AICF ID: %v\n", aicfId, err)
 		} else {
@@ -329,12 +369,12 @@ func main() {
 			}
 		}
 
-		membershipStatusFIDE, err := getMembership(fideId)
+		membershipStatusFIDE, err := getMembership(fideId, name)
 		if err != nil {
 			fmt.Printf("ID: %v; Error in getting membership status response FIDE ID: %v\n", fideId, err)
 		}
 
-		membershipStatusAICF, err := getMembership(aicfId)
+		membershipStatusAICF, err := getMembership(aicfId, name)
 		if err != nil {
 			fmt.Printf("ID: %v; Error in getting membership status response AICF ID: %v\n", aicfId, err)
 		}
