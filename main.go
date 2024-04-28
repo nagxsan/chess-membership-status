@@ -15,7 +15,54 @@ import (
 	excelize "github.com/xuri/excelize/v2"
 )
 
-func getMembership(id, name string) (bool, error) {
+func getNameFromAICFOrFIDEId(id string) (string, error) {
+  url := fmt.Sprintf("https://admin.aicf.in/api/players?name=%s&state=0&city=0", id)
+
+	response, err := http.Get(url)
+	if err != nil {
+		return "", fmt.Errorf("Error in making the API call: %v", err)
+	}
+
+	defer response.Body.Close()
+
+	var data map[string]interface{}
+	if err := json.NewDecoder(response.Body).Decode(&data); err != nil {
+		return "", fmt.Errorf("Error in decoding response body: %v", err)
+	}
+
+	dataArray, ok := data["data"].([]interface{})
+	if !ok || len(dataArray) <= 0 {
+		return "", fmt.Errorf("Error in getting dataArray: %v", err)
+	}
+
+	if len(dataArray) != 1 {
+		return "", fmt.Errorf("Incorrect ID")
+	}
+
+	playerData, ok := dataArray[0].(map[string]interface{})
+	if !ok {
+		return "", fmt.Errorf("Error in getting playerData: %v", err)
+	}
+
+  var firstName, middleName, lastName string
+  if playerData["first_name"] != nil {
+    firstName = playerData["first_name"].(string)
+  }
+
+  if playerData["middle_name"] != nil {
+    middleName = playerData["middle_name"].(string)
+  }
+
+  if playerData["last_name"] != nil {
+    lastName = playerData["last_name"].(string)
+  }
+
+  name := firstName + " " + middleName + " " + lastName
+
+  return name, nil
+}
+
+func getMembership(id string) (bool, error) {
 	url := fmt.Sprintf("https://admin.aicf.in/api/players?name=%s&state=0&city=0", id)
 
 	response, err := http.Get(url)
@@ -44,19 +91,6 @@ func getMembership(id, name string) (bool, error) {
 		return false, fmt.Errorf("Error in getting playerData: %v", err)
 	}
 
-  var firstName, lastName string
-  if playerData["first_name"] != nil {
-    firstName = playerData["first_name"].(string)
-  }
-
-  if playerData["last_name"] != nil {
-    lastName = playerData["last_name"].(string)
-  }
-
-  if strings.ToLower(firstName + " " + lastName) != strings.ToLower(name) {
-    return false, fmt.Errorf("Name does not exactly match")
-  }
-
 	membershipStatus, ok := playerData["membership_status"].(bool)
 	if !ok {
 		return false, fmt.Errorf("Error in getting membershipStatus: %v", err)
@@ -65,7 +99,7 @@ func getMembership(id, name string) (bool, error) {
 	return membershipStatus, nil
 }
 
-func getMCAId(id, name string) (string, error) {
+func getMCAId(id string) (string, error) {
 	if len(id) < 8 || !strings.Contains(strings.ToLower(id), "mh") {
 		return "", fmt.Errorf("error: incorrect AICF ID")
 	}
@@ -172,8 +206,8 @@ func getMCAId(id, name string) (string, error) {
     if license[2] == "" {
       continue
     }
-    if license[1] != "" && strings.Contains(strings.ToLower(license[0]), strings.ToLower(name)) {
-      return license[1], nil
+    if license[1] != "" {
+      return license[0] + ";" + license[1], nil
     }
   }
   return "", fmt.Errorf("%s: no MCA ID found", id)
@@ -262,6 +296,8 @@ func main() {
 
 	membershipStatusCell := string(lastCol+1) + strconv.Itoa(tableRowNumber)
 	mcaIdCell := string(lastCol+2) + strconv.Itoa(tableRowNumber)
+  membershipNameCell := string(lastCol+3) + strconv.Itoa(tableRowNumber)
+  mcaNameCell := string(lastCol+4) + strconv.Itoa(tableRowNumber)
 
 	err = xl.SetCellStr(sheetName, membershipStatusCell, "Membership_Status")
 	if err != nil {
@@ -274,6 +310,18 @@ func main() {
 		fmt.Println("Error setting the MCA ID column: ", err)
 		return
 	}
+  
+  err = xl.SetCellStr(sheetName, membershipNameCell, "Membership Name")
+	if err != nil {
+		fmt.Println("Error setting the Membership Name column: ", err)
+		return
+	}
+
+  err = xl.SetCellStr(sheetName, mcaNameCell, "MCA Name")
+	if err != nil {
+		fmt.Println("Error setting the MCA Name column: ", err)
+		return
+	}
 
 	err = xl.Save()
 	if err != nil {
@@ -283,8 +331,10 @@ func main() {
 
 	membershipStatusColumn := string(lastCol + 1)
 	mcaIdColumn := string(lastCol + 2)
+  membershipNameColumn := string(lastCol + 3)
+  mcaNameColumn := string(lastCol + 4)
 
-	var aicfColumn, fideColumn, nameColumn string
+	var aicfColumn, fideColumn string
 
 	for colNum := byte(0); (colNum + 65) <= lastCol; colNum++ {
 		colName := string(colNum + 65)
@@ -299,9 +349,7 @@ func main() {
 			aicfColumn = colName
 		} else if cellValue == "FIDE ID" {
 			fideColumn = colName
-		} else if cellValue == "Name" {
-      nameColumn = colName
-    }
+		}
 	}
 
 	for dataRowNumber := tableRowNumber + 1; ; dataRowNumber++ {
@@ -326,12 +374,6 @@ func main() {
 			fmt.Println("Error getting cell value: ", err)
 			return
 		}
-
-    name, err := xl.GetCellValue(sheetName, nameColumn+strconv.Itoa(dataRowNumber))
-    if err != nil {
-      fmt.Println("Error getting cell value ", err)
-      return
-    }
 
 		var membershipStatus bool
 
@@ -358,23 +400,33 @@ func main() {
 			}
 		}
 
-		mcaId, err := getMCAId(aicfId, name)
+		mcaDetails, err := getMCAId(aicfId)
 		if err != nil {
-			fmt.Printf("ID: %v; Error getting MCA ID for AICF ID: %v\n", aicfId, err)
+			fmt.Printf("ID: %v; Error getting MCA Details for AICF ID: %v\n", aicfId, err)
 		} else {
+      details := strings.Split(mcaDetails, ";")
+      mcaName := details[0]
+      mcaId := details[1]
+
 			err = xl.SetCellStr(sheetName, mcaIdColumn+strconv.Itoa(dataRowNumber), mcaId)
 			if err != nil {
 				fmt.Println("Error setting MCA ID in sheet")
 				return
 			}
+
+      err = xl.SetCellStr(sheetName, mcaNameColumn+strconv.Itoa(dataRowNumber), mcaName)
+			if err != nil {
+				fmt.Println("Error setting MCA Name in sheet")
+				return
+			}
 		}
 
-		membershipStatusFIDE, err := getMembership(fideId, name)
+		membershipStatusFIDE, err := getMembership(fideId)
 		if err != nil {
 			fmt.Printf("ID: %v; Error in getting membership status response FIDE ID: %v\n", fideId, err)
 		}
 
-		membershipStatusAICF, err := getMembership(aicfId, name)
+		membershipStatusAICF, err := getMembership(aicfId)
 		if err != nil {
 			fmt.Printf("ID: %v; Error in getting membership status response AICF ID: %v\n", aicfId, err)
 		}
@@ -393,6 +445,29 @@ func main() {
 				fmt.Println("Error setting membership status value: ", err)
 				return
 			}
+		}
+
+    membershipNameFIDE, err := getNameFromAICFOrFIDEId(fideId)
+    if err != nil {
+      fmt.Printf("ID: %v; Error in getting membership name from FIDE ID: %v\n", fideId, err)
+    }
+
+    membershipNameAICF, err := getNameFromAICFOrFIDEId(aicfId)
+    if err != nil {
+      fmt.Printf("ID: %v; Error in getting membership name from AICF ID: %v\n", aicfId, err)
+    }
+
+    var membershipName string
+    if membershipNameFIDE != "" {
+      membershipName = membershipNameFIDE
+    } else {
+      membershipName = membershipNameAICF
+    }
+
+    err = xl.SetCellStr(sheetName, membershipNameColumn+strconv.Itoa(dataRowNumber), membershipName)
+		if err != nil {
+			fmt.Println("Error setting membership name value: ", err)
+			return
 		}
 
 		time.Sleep(2 * time.Second)
