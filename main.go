@@ -161,7 +161,9 @@ func getMCAId(id string) (string, error) {
       mcaLicense = append(mcaLicense, data)
     }
     if idx % numCols == numCols - 1 {
-      mcaLicenses = append(mcaLicenses, mcaLicense)
+      if strings.TrimSpace(data) == "31-03-2026" {
+    	mcaLicenses = append(mcaLicenses, mcaLicense)
+	  }
       mcaLicense = []string{}
     }
   }
